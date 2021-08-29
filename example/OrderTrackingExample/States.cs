@@ -3,7 +3,7 @@ using System.Collections.Generic;
 
 namespace OrderTrackingExample
 {
-    class OrderState : IEquatable<OrderState>
+    abstract class OrderState : IEquatable<OrderState>
     {
         internal enum States
         {
@@ -50,6 +50,23 @@ namespace OrderTrackingExample
         public static bool operator !=(OrderState left, OrderState right)
         {
             return !Equals(left, right);
+        }
+
+        public static OrderState Create(States state)
+        {
+            switch (state)
+            {
+                case States.Opened:
+                    return new OpenedState();
+                case States.Inprogress:
+                    return new InprogressState();
+                case States.Canceled:
+                    return new CanceledState();
+                case States.Completed:
+                    return new CompletedState();
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(state), state, null);
+            }
         }
     }
 

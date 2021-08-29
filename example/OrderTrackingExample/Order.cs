@@ -20,9 +20,12 @@ namespace OrderTrackingExample
             _states = new List<OrderState>();
 
 
-            CurrentState = new OrderState(OrderState.States.Opened, DateTimeOffset.UtcNow);
+            CurrentState = OrderState.Create(OrderState.States.Opened);
 
-            _machine = new StateMachine<OrderState.States, BaseTrigger.Triggers>(() => CurrentState.State, s => CurrentState = new OrderState(s, DateTimeOffset.UtcNow));
+            _machine = new StateMachine<OrderState.States, BaseTrigger.Triggers>(() => CurrentState.State, s =>
+            {
+                CurrentState = OrderState.Create(s);
+            });
 
             recordNoteTrigger = _machine.SetTriggerParameters<RecordNoteTrigger>(BaseTrigger.Triggers.RecordNote);
             completeTrigger = _machine.SetTriggerParameters<CompleteTrigger>(BaseTrigger.Triggers.Complete);
