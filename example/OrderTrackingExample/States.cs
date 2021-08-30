@@ -1,28 +1,42 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Text;
+
 
 namespace OrderTrackingExample
 {
+    class TriggerData
+    {
+        internal BaseTrigger.Triggers Trigger { get; init; }
+        internal DateTimeOffset TriggerDate { get; init; }
+    }
+
     abstract class OrderState : IEquatable<OrderState>
     {
         internal enum States
         {
+            Created,
             Opened,
             Inprogress,
             Canceled,
             Completed
         }
 
+
+
         public OrderState(States state, DateTimeOffset start)
         {
             State = state;
             Start = start;
+            Triggers = new List<TriggerData>();
             Notes = new List<string>();
         }
 
-        internal States State { get; set; }
+
+        internal States State { get; private set; }
         internal DateTimeOffset Start { get; private set; }
         internal DateTimeOffset? End { get; set; }
+        internal ICollection<TriggerData> Triggers { get; private set; }
         internal ICollection<string> Notes { get; private set; }
 
         public bool Equals(OrderState other)
@@ -39,7 +53,7 @@ namespace OrderTrackingExample
 
         public override int GetHashCode()
         {
-            return HashCode.Combine((int)State, Start);
+            return HashCode.Combine((int)State, Start.Ticks);
         }
 
         public static bool operator ==(OrderState left, OrderState right)
@@ -67,6 +81,22 @@ namespace OrderTrackingExample
                 default:
                     throw new ArgumentOutOfRangeException(nameof(state), state, null);
             }
+        }
+
+        public override string ToString()
+        {
+            var builder = new StringBuilder($"State: '{State}' Started at: {Start:HH-mm-ss,FFFF} {(End != null ? $"And Ended at: {End:HH-mm-ss,FFFF}" : "")}");
+            builder.AppendLine($" ");
+            foreach (var trigger in Triggers)
+            {
+                builder.AppendLine($"Trigger Recorded: {trigger.Trigger} at {trigger.TriggerDate:HH-mm-ss,FFFF}");
+            }
+
+            foreach (var note in Notes)
+            {
+                builder.AppendLine($"Note Recorded: {note}");
+            }
+            return builder.ToString();
         }
     }
 

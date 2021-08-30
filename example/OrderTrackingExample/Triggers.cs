@@ -7,6 +7,8 @@ namespace OrderTrackingExample
         internal enum Triggers
         {
             RecordNote,
+            UpdateWork,
+            UpdateWorkData,
             Accept,
             Cancel,
             Complete,
@@ -50,9 +52,10 @@ namespace OrderTrackingExample
         public string Note { get; init; }
     }
 
-    class AcceptTrigger : BaseTrigger
+    class UpdateWorkDataTrigger : BaseTrigger
     {
         internal override Triggers Trigger => Triggers.Accept;
+        internal string Data { get; init; }
     }
 
     class CancelTrigger : BaseTrigger

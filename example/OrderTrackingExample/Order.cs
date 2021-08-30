@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using Stateless;
 
 namespace OrderTrackingExample
@@ -11,38 +12,41 @@ namespace OrderTrackingExample
         private readonly StateMachine<OrderState.States, BaseTrigger.Triggers>.TriggerWithParameters<CompleteTrigger> completeTrigger;
         private readonly StateMachine<OrderState.States, BaseTrigger.Triggers>.TriggerWithParameters<CancelTrigger> cancelTrigger;
         private readonly StateMachine<OrderState.States, BaseTrigger.Triggers>.TriggerWithParameters<RecordNoteTrigger> recordNoteTrigger;
-        private IList<OrderState> _states;
+        private readonly StateMachine<OrderState.States, BaseTrigger.Triggers>.TriggerWithParameters<UpdateWorkDataTrigger> updateWorkDataTrigger;
+        private HashSet<OrderState> _states;
 
 
         public Order(string number)
         {
             Number = number;
-            _states = new List<OrderState>();
+            _states = new HashSet<OrderState>();
 
-
-            CurrentState = OrderState.Create(OrderState.States.Opened);
-
-            _machine = new StateMachine<OrderState.States, BaseTrigger.Triggers>(() => CurrentState.State, s =>
-            {
-                CurrentState = OrderState.Create(s);
-            });
+            _machine = new StateMachine<OrderState.States, BaseTrigger.Triggers>(() => CurrentState?.State ?? OrderState.States.Created, s =>
+                {
+                    CurrentState = OrderState.Create(s);
+                });
 
             recordNoteTrigger = _machine.SetTriggerParameters<RecordNoteTrigger>(BaseTrigger.Triggers.RecordNote);
+            updateWorkDataTrigger = _machine.SetTriggerParameters<UpdateWorkDataTrigger>(BaseTrigger.Triggers.UpdateWorkData);
             completeTrigger = _machine.SetTriggerParameters<CompleteTrigger>(BaseTrigger.Triggers.Complete);
             cancelTrigger = _machine.SetTriggerParameters<CancelTrigger>(BaseTrigger.Triggers.Cancel);
 
+            _machine.Configure(OrderState.States.Created)
+                .Permit(BaseTrigger.Triggers.Create, OrderState.States.Opened);
+
             _machine.Configure(OrderState.States.Opened)
-                .PermitReentryIf(BaseTrigger.Triggers.Create, () => _states.Count == 0)
-                .InternalTransitionIf(recordNoteTrigger, trigger => !string.IsNullOrWhiteSpace(trigger.Note), (trigger, transition) => { })
+                .InternalTransitionIf(recordNoteTrigger, trigger => !string.IsNullOrWhiteSpace(trigger.Note), onInternalTransition)
                 .Permit(BaseTrigger.Triggers.Accept, OrderState.States.Inprogress);
 
             _machine.Configure(OrderState.States.Inprogress)
                 .SubstateOf(OrderState.States.Opened)
+                .PermitReentry(BaseTrigger.Triggers.UpdateWork)
+                .PermitReentryIf(updateWorkDataTrigger, trigger => !string.IsNullOrWhiteSpace(trigger.Data))
                 .PermitIf(completeTrigger, OrderState.States.Completed, trigger => !string.IsNullOrWhiteSpace(trigger.CompleteNotes))
                 .PermitIf(cancelTrigger, OrderState.States.Canceled, trigger => !string.IsNullOrWhiteSpace(trigger.User));
 
             _machine.Configure(OrderState.States.Completed)
-                .PermitReentryIf(recordNoteTrigger, trigger => !string.IsNullOrWhiteSpace(trigger.Note));
+                .InternalTransitionIf(recordNoteTrigger, trigger => !string.IsNullOrWhiteSpace(trigger.Note), onInternalTransition);
 
             _machine.Configure(OrderState.States.Canceled)
                 .SubstateOf(OrderState.States.Completed);
@@ -52,15 +56,50 @@ namespace OrderTrackingExample
             _machine.Fire(BaseTrigger.Triggers.Create);
         }
 
+
+        private void onInternalTransition<TArg0>(TArg0 arg, StateMachine<OrderState.States, BaseTrigger.Triggers>.Transition transition)
+        {
+            switch (arg)
+            {
+                case RecordNoteTrigger noteTrigger:
+                    CurrentState.Notes.Add(noteTrigger.Note);
+                    break;
+            }
+        }
+
+
         private void onStateChanged(StateMachine<OrderState.States, BaseTrigger.Triggers>.Transition transition)
         {
-            var previousState = _states.OrderByDescending(s => s.Start).FirstOrDefault();
+            if (CurrentState is null)
+                return;
 
-            if (previousState is not null)
-                previousState.End = DateTimeOffset.UtcNow;
+            if (transition.IsReentry)
+            {
+                var lastState = _states.OrderByDescending(s => s.Start).FirstOrDefault();
+                if (lastState == null)
+                    throw new Exception("There is no previous state!");
 
-            _states.Add(CurrentState);
+                lastState.Triggers.Add(new TriggerData
+                {
+                    Trigger = transition.Trigger,
+                    TriggerDate = DateTimeOffset.UtcNow,
+                });
+            }
+            else
+            {
+                var previousState = _states.OrderByDescending(s => s.Start).FirstOrDefault();
+                if (previousState != null)
+                    previousState.End = DateTimeOffset.UtcNow;
+
+                CurrentState.Triggers.Add(new TriggerData
+                {
+                    Trigger = transition.Trigger,
+                    TriggerDate = DateTimeOffset.UtcNow,
+                });
+                _states.Add(CurrentState);
+            }
         }
+
 
         public string Number { get; set; }
         public OrderState CurrentState { get; private set; }
@@ -70,6 +109,17 @@ namespace OrderTrackingExample
         {
             _machine.Fire(BaseTrigger.Triggers.Accept);
         }
+        public void Update()
+        {
+            _machine.Fire(BaseTrigger.Triggers.UpdateWork);
+        }
+
+
+        public void UpdateData(string data)
+        {
+            _machine.Fire(updateWorkDataTrigger, new UpdateWorkDataTrigger { Data = data, TriggerDate = DateTimeOffset.UtcNow });
+        }
+
 
         public void RecordNote(string note)
         {
@@ -83,7 +133,7 @@ namespace OrderTrackingExample
 
         public void Cancel(string user)
         {
-            _machine.Fire(completeTrigger, new CancelTrigger() { User = user, TriggerDate = DateTimeOffset.UtcNow });
+            _machine.Fire(cancelTrigger, new CancelTrigger() { User = user, TriggerDate = DateTimeOffset.UtcNow });
         }
     }
 }
