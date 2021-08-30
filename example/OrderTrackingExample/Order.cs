@@ -73,12 +73,10 @@ namespace OrderTrackingExample
             if (CurrentState is null)
                 return;
 
-            if (transition.IsReentry)
-            {
-                var lastState = _states.OrderByDescending(s => s.Start).FirstOrDefault();
-                if (lastState == null)
-                    throw new Exception("There is no previous state!");
+            var lastState = _states.OrderByDescending(s => s.Start).FirstOrDefault();
 
+            if (lastState != null && transition.IsReentry && lastState.State == transition.Destination)
+            {
                 lastState.Triggers.Add(new TriggerData
                 {
                     Trigger = transition.Trigger,
@@ -87,9 +85,8 @@ namespace OrderTrackingExample
             }
             else
             {
-                var previousState = _states.OrderByDescending(s => s.Start).FirstOrDefault();
-                if (previousState != null)
-                    previousState.End = DateTimeOffset.UtcNow;
+                if (lastState != null)
+                    lastState.End = DateTimeOffset.UtcNow;
 
                 CurrentState.Triggers.Add(new TriggerData
                 {
